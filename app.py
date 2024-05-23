@@ -43,8 +43,6 @@ class LlavaCaptioner(ClamsApp):
                 start_time = timeframe.get("start")
                 end_time = timeframe.get("end")
                 rep_frame = (start_time + end_time) / 2
-                timepoint = new_view.new_annotation(AnnotationTypes.TimePoint)
-                timepoint.add_property('timePoint', rep_frame)
 
             image = vdh.extract_frames_as_images(video_doc, [rep_frame], as_PIL=True)[0]
 
@@ -53,11 +51,9 @@ class LlavaCaptioner(ClamsApp):
             output = self.model.generate(**inputs, max_new_tokens=100)
             description = self.processor.decode(output[0], skip_special_tokens=True)
 
-            print(description)
             text_document = new_view.new_textdocument(description)
             alignment = new_view.new_annotation(AnnotationTypes.Alignment)
             alignment.add_property("source", timeframe.id)
-            # todo, if choosing the middle frame the alignment should be to that frame?
             alignment.add_property("target", text_document.id)
 
         return mmif
