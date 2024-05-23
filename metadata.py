@@ -37,9 +37,19 @@ def appmetadata() -> AppMetadata:
     metadata.add_output(DocumentTypes.TextDocument)
     
     # (optional) and finally add runtime parameter specifications
-    # metadata.add_parameter(name='a_param', description='example parameter description',
-    #                        type='boolean', default='false')
-    # metadta.add_parameter(more...)
+    metadata.add_parameter(
+        name='defaultPrompt', type='string', default='What is shown in this video frame?',
+        description='default prompt to use for timeframes not specified in the promptMap. If set to `-`, '
+                     'timeframes not specified in the promptMap will be skipped.'
+    )
+    metadata.add_parameter(
+        name='promptMap', type='map', default=[],
+        description=('mapping of labels of the input timeframe annotations to new prompts. Must be formatted as '
+                     '\"IN_LABEL:PROMPT\" (with a colon). To pass multiple mappings, use this parameter multiple '
+                     'times. By default, any timeframe labels not mapped to a prompt will be used with the default'
+                     'prompt. In order to skip timeframes with a particular label, pass `-` as the prompt value.'
+                     'in order to skip all timeframes not specified in the promptMap, set the defaultPrompt'
+                     'parameter to `-`'))
     
     return metadata
 

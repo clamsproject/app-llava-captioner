@@ -28,13 +28,31 @@ class LlavaCaptioner(ClamsApp):
     def _appmetadata(self) -> AppMetadata:
         pass
     
+    def get_prompt(self, label: str, prompt_map: dict, default_prompt: str) -> str:
+        prompt = prompt_map.get(label, default_prompt)
+        if prompt == "-":
+            return None
+        prompt = f"[INST] <image>\n{prompt}\n[/INST]"
+        print (label, prompt)
+        return prompt
+
     def _annotate(self, mmif: Mmif, **parameters) -> Mmif:
+        label_map = parameters.get('promptMap')
+        print (label_map)
+
+        default_prompt = parameters.get('defaultPrompt')
+
         video_doc: Document = mmif.get_documents_by_type(DocumentTypes.VideoDocument)[0]
         input_view: View = mmif.get_views_for_document(video_doc.properties.id)[0]
         new_view: View = mmif.new_view()
         self.sign_view(new_view, parameters)
 
         for timeframe in input_view.get_annotations(AnnotationTypes.TimeFrame):
+            label = timeframe.get_property('label')
+            prompt = self.get_prompt(label, label_map, default_prompt)
+            if not prompt:
+                continue
+
             representatives = timeframe.get("representatives") if "representatives" in timeframe.properties else None
             if representatives:
                 representative = input_view.get_annotation_by_id(representatives[0])
@@ -46,7 +64,6 @@ class LlavaCaptioner(ClamsApp):
 
             image = vdh.extract_frames_as_images(video_doc, [rep_frame], as_PIL=True)[0]
 
-            prompt = "[INST] <image>\nWhat is shown in this image? [/INST]"
             inputs = self.processor(prompt, image, return_tensors="pt").to("cuda:0")
             output = self.model.generate(**inputs, max_new_tokens=100)
             description = self.processor.decode(output[0], skip_special_tokens=True)
