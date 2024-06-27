@@ -53,7 +53,7 @@ class LlavaCaptioner(ClamsApp):
         annotations = []
 
         def process_batch(prompts, images, annotations):
-            inputs = self.processor(images=images, text=prompts, padding=True, return_tensors="pt").to(self.device)
+            inputs = self.processor(images=images, text=prompts, padding=True, return_tensors="pt")
             outputs = self.model.generate(
                 **inputs,
                 do_sample=False,
