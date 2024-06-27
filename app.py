@@ -39,6 +39,7 @@ class LlavaCaptioner(ClamsApp):
         label_map = parameters.get('promptMap')
         default_prompt = parameters.get('defaultPrompt')
         frame_interval = parameters.get('frameInterval', 10)  # Default to every 10th frame if not specified
+        batch_size = parameters.get('batchSize', 4)  # Default batch size
 
         video_doc: Document = mmif.get_documents_by_type(DocumentTypes.VideoDocument)[0]
         input_view: View = mmif.get_views_for_document(video_doc.properties.id)[0]
@@ -47,6 +48,29 @@ class LlavaCaptioner(ClamsApp):
         
         timeframes = input_view.get_annotations(AnnotationTypes.TimeFrame)
         
+        prompts = []
+        images = []
+        annotations = []
+
+        def process_batch(prompts, images, annotations):
+            inputs = self.processor(images=images, text=prompts, padding=True, return_tensors="pt").to(self.device)
+            outputs = self.model.generate(
+                **inputs,
+                do_sample=False,
+                num_beams=5,
+                max_length=256,
+                min_length=1,
+                repetition_penalty=1.5,
+                length_penalty=1.0,
+                temperature=1,
+            )
+            generated_texts = self.processor.batch_decode(outputs, skip_special_tokens=True)
+            for generated_text, annotation in zip(generated_texts, annotations):
+                text_document = new_view.new_textdocument(generated_text.strip())
+                alignment = new_view.new_annotation(AnnotationTypes.Alignment)
+                alignment.add_property("source", annotation['source'])
+                alignment.add_property("target", text_document.id)
+
         if timeframes:
             for timeframe in timeframes:
                 label = timeframe.get_property('label')
@@ -59,32 +83,36 @@ class LlavaCaptioner(ClamsApp):
                     image = vdh.extract_representative_frame(mmif, timeframe)
                 else:
                     image = vdh.extract_mid_frame(mmif, timeframe)
-                # clear gpu cache
-                torch.cuda.empty_cache()
-                inputs = self.processor(prompt, image, return_tensors="pt")
-                output = self.model.generate(**inputs, max_new_tokens=100)
-                description = self.processor.decode(output[0], skip_special_tokens=True)
-                print (description)
-                text_document = new_view.new_textdocument(description)
-                # todo discuss this alignment missing timepoint information
-                alignment = new_view.new_annotation(AnnotationTypes.Alignment)
-                alignment.add_property("source", timeframe.id)
-                alignment.add_property("target", text_document.id)
+
+                prompts.append(prompt)
+                images.append(image)
+                annotations.append({'source': timeframe.id})
+
+                if len(prompts) == batch_size:
+                    process_batch(prompts, images, annotations)
+                    prompts, images, annotations = [], [], []
+
+            if prompts:
+                process_batch(prompts, images, annotations)
         else:
             total_frames = vdh.get_frame_count(video_doc)
             for frame_number in range(0, total_frames, frame_interval):
                 image = vdh.extract_frames_as_images(video_doc, [frame_number], as_PIL=True)[0]
                 prompt = default_prompt
-                inputs = self.processor(prompt, image, return_tensors="pt")
-                output = self.model.generate(**inputs, max_new_tokens=250)
-                description = self.processor.decode(output[0], skip_special_tokens=True)
 
-                text_document = new_view.new_textdocument(description)
+                prompts.append(prompt)
+                images.append(image)
+                # Create new timepoint annotation
                 timepoint = new_view.new_annotation(AnnotationTypes.TimePoint)
                 timepoint.add_property("timePoint", frame_number)
-                alignment = new_view.new_annotation(AnnotationTypes.Alignment)
-                alignment.add_property("source", timepoint.id)
-                alignment.add_property("target", text_document.id)
+                annotations.append({'source': timepoint.id})
+
+                if len(prompts) == batch_size:
+                    process_batch(prompts, images, annotations)
+                    prompts, images, annotations = [], [], []
+
+            if prompts:
+                process_batch(prompts, images, annotations)
 
         return mmif
 
@@ -94,6 +122,7 @@ if __name__ == "__main__":
     parser.add_argument("--port", action="store", default="5000", help="set port to listen")
     parser.add_argument("--production", action="store_true", help="run gunicorn server")
     parser.add_argument("--frameInterval", type=int, default=10, help="Interval of frames for captioning when no timeframes are present")
+    parser.add_argument("--batchSize", type=int, default=4, help="Batch size for processing prompt+image pairs")
 
     parsed_args = parser.parse_args()
 
