@@ -1,9 +1,9 @@
 # Make sure clams-python version is explicitly specified, at least the lower bound
-clams-python==1.2.2
+clams-python==1.2.4
 # New dependencies for LLaVANext model
 torch>=1.10.0
 transformers>=4.0.0
 Pillow>=8.0.0
-bitsandbytes==0.43.1
+bitsandbytes==0.42.0
 opencv-python==4.9.0.80
 accelerate==0.30.1
