@@ -38,22 +38,23 @@ class LlavaCaptioner(ClamsApp):
     def _annotate(self, mmif: Mmif, **parameters) -> Mmif:
         label_map = parameters.get('promptMap')
         default_prompt = parameters.get('defaultPrompt')
-        frame_interval = parameters.get('frameInterval', 10)  # Default to every 10th frame if not specified
-        batch_size = parameters.get('batchSize', 4)  # Default batch size
+        frame_interval = parameters.get('frameInterval', 30)  # Default to every 30th frame if not specified
+        batch_size = parameters.get('batchSize', 8)  # Default batch size
 
         video_doc: Document = mmif.get_documents_by_type(DocumentTypes.VideoDocument)[0]
-        input_view: View = mmif.get_views_for_document(video_doc.properties.id)[0]
+        input_view: View = mmif.get_views_for_document(video_doc.id)[-1]
         new_view: View = mmif.new_view()
         self.sign_view(new_view, parameters)
-        
+        new_view.new_contain(DocumentTypes.TextDocument)
+        new_view.new_contain(AnnotationTypes.Alignment)
+
         timeframes = input_view.get_annotations(AnnotationTypes.TimeFrame)
-        
         prompts = []
         images = []
         annotations = []
 
         def process_batch(prompts, images, annotations):
-            inputs = self.processor(images=images, text=prompts, padding=True, return_tensors="pt")
+            inputs = self.processor(images=images, text=prompts, padding=True, return_tensors="pt").to(self.model.device)
             outputs = self.model.generate(
                 **inputs,
                 do_sample=False,
@@ -69,10 +70,10 @@ class LlavaCaptioner(ClamsApp):
                 text_document = new_view.new_textdocument(generated_text.strip())
                 alignment = new_view.new_annotation(AnnotationTypes.Alignment)
                 alignment.add_property("source", annotation['source'])
-                alignment.add_property("target", text_document.id)
+                alignment.add_property("target", text_document.long_id)
 
         if timeframes:
-            for timeframe in timeframes:
+            for timeframe in list(timeframes):
                 label = timeframe.get_property('label')
                 prompt = self.get_prompt(label, label_map, default_prompt)
                 if not prompt:
@@ -80,13 +81,12 @@ class LlavaCaptioner(ClamsApp):
 
                 representatives = timeframe.get("representatives") if "representatives" in timeframe.properties else None
                 if representatives:
-                    image = vdh.extract_representative_frame(mmif, timeframe)
+                    image = vdh.extract_representative_frame(mmif, timeframe, as_PIL=True)
                 else:
-                    image = vdh.extract_mid_frame(mmif, timeframe)
-
+                    image = vdh.extract_mid_frame(mmif, timeframe, as_PIL=True)
                 prompts.append(prompt)
                 images.append(image)
-                annotations.append({'source': timeframe.id})
+                annotations.append({'source': timeframe.long_id})
 
                 if len(prompts) == batch_size:
                     process_batch(prompts, images, annotations)
@@ -96,8 +96,10 @@ class LlavaCaptioner(ClamsApp):
                 process_batch(prompts, images, annotations)
         else:
             total_frames = vdh.get_frame_count(video_doc)
-            for frame_number in range(0, total_frames, frame_interval):
-                image = vdh.extract_frames_as_images(video_doc, [frame_number], as_PIL=True)[0]
+            frame_numbers = list(range(0, total_frames, frame_interval))
+            images = vdh.extract_frames_as_images(video_doc, frame_numbers)
+
+            for frame_number, image in zip(frame_numbers, images):
                 prompt = default_prompt
 
                 prompts.append(prompt)
@@ -105,7 +107,7 @@ class LlavaCaptioner(ClamsApp):
                 # Create new timepoint annotation
                 timepoint = new_view.new_annotation(AnnotationTypes.TimePoint)
                 timepoint.add_property("timePoint", frame_number)
-                annotations.append({'source': timepoint.id})
+                annotations.append({'source': timepoint.long_id})
 
                 if len(prompts) == batch_size:
                     process_batch(prompts, images, annotations)
