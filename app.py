@@ -33,45 +33,88 @@ class LlavaCaptioner(ClamsApp):
         if prompt == "-":
             return None
         prompt = f"[INST] <image>\n{prompt}\n[/INST]"
-        print (label, prompt)
         return prompt
 
     def _annotate(self, mmif: Mmif, **parameters) -> Mmif:
         label_map = parameters.get('promptMap')
-        print (label_map)
-
         default_prompt = parameters.get('defaultPrompt')
+        frame_interval = parameters.get('frameInterval', 30)  # Default to every 30th frame if not specified
+        batch_size = parameters.get('batchSize', 8)  # Default batch size
 
         video_doc: Document = mmif.get_documents_by_type(DocumentTypes.VideoDocument)[0]
-        input_view: View = mmif.get_views_for_document(video_doc.properties.id)[0]
+        input_view: View = mmif.get_views_for_document(video_doc.id)[-1]
         new_view: View = mmif.new_view()
         self.sign_view(new_view, parameters)
+        new_view.new_contain(DocumentTypes.TextDocument)
+        new_view.new_contain(AnnotationTypes.Alignment)
 
-        for timeframe in input_view.get_annotations(AnnotationTypes.TimeFrame):
-            label = timeframe.get_property('label')
-            prompt = self.get_prompt(label, label_map, default_prompt)
-            if not prompt:
-                continue
+        timeframes = input_view.get_annotations(AnnotationTypes.TimeFrame)
+        prompts = []
+        images = []
+        annotations = []
 
-            representatives = timeframe.get("representatives") if "representatives" in timeframe.properties else None
-            if representatives:
-                representative = input_view.get_annotation_by_id(representatives[0])
-                rep_frame = vdh.convert(representative.get("timePoint"), "milliseconds", "frame", vdh.get_framerate(video_doc))
-            else:
-                start_time = timeframe.get("start")
-                end_time = timeframe.get("end")
-                rep_frame = (start_time + end_time) / 2
+        def process_batch(prompts, images, annotations):
+            inputs = self.processor(images=images, text=prompts, padding=True, return_tensors="pt").to(self.model.device)
+            outputs = self.model.generate(
+                **inputs,
+                do_sample=False,
+                num_beams=5,
+                max_length=256,
+                min_length=1,
+                repetition_penalty=1.5,
+                length_penalty=1.0,
+                temperature=1,
+            )
+            generated_texts = self.processor.batch_decode(outputs, skip_special_tokens=True)
+            for generated_text, annotation in zip(generated_texts, annotations):
+                text_document = new_view.new_textdocument(generated_text.strip())
+                alignment = new_view.new_annotation(AnnotationTypes.Alignment)
+                alignment.add_property("source", annotation['source'])
+                alignment.add_property("target", text_document.long_id)
 
-            image = vdh.extract_frames_as_images(video_doc, [rep_frame], as_PIL=True)[0]
+        if timeframes:
+            for timeframe in list(timeframes):
+                label = timeframe.get_property('label')
+                prompt = self.get_prompt(label, label_map, default_prompt)
+                if not prompt:
+                    continue
 
-            inputs = self.processor(prompt, image, return_tensors="pt").to("cuda:0")
-            output = self.model.generate(**inputs, max_new_tokens=100)
-            description = self.processor.decode(output[0], skip_special_tokens=True)
+                representatives = timeframe.get("representatives") if "representatives" in timeframe.properties else None
+                if representatives:
+                    image = vdh.extract_representative_frame(mmif, timeframe, as_PIL=True)
+                else:
+                    image = vdh.extract_mid_frame(mmif, timeframe, as_PIL=True)
+                prompts.append(prompt)
+                images.append(image)
+                annotations.append({'source': timeframe.long_id})
 
-            text_document = new_view.new_textdocument(description)
-            alignment = new_view.new_annotation(AnnotationTypes.Alignment)
-            alignment.add_property("source", timeframe.id)
-            alignment.add_property("target", text_document.id)
+                if len(prompts) == batch_size:
+                    process_batch(prompts, images, annotations)
+                    prompts, images, annotations = [], [], []
+
+            if prompts:
+                process_batch(prompts, images, annotations)
+        else:
+            total_frames = vdh.get_frame_count(video_doc)
+            frame_numbers = list(range(0, total_frames, frame_interval))
+            images = vdh.extract_frames_as_images(video_doc, frame_numbers)
+
+            for frame_number, image in zip(frame_numbers, images):
+                prompt = default_prompt
+
+                prompts.append(prompt)
+                images.append(image)
+                # Create new timepoint annotation
+                timepoint = new_view.new_annotation(AnnotationTypes.TimePoint)
+                timepoint.add_property("timePoint", frame_number)
+                annotations.append({'source': timepoint.long_id})
+
+                if len(prompts) == batch_size:
+                    process_batch(prompts, images, annotations)
+                    prompts, images, annotations = [], [], []
+
+            if prompts:
+                process_batch(prompts, images, annotations)
 
         return mmif
 
@@ -80,6 +123,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", action="store", default="5000", help="set port to listen")
     parser.add_argument("--production", action="store_true", help="run gunicorn server")
+    parser.add_argument("--frameInterval", type=int, default=10, help="Interval of frames for captioning when no timeframes are present")
+    parser.add_argument("--batchSize", type=int, default=4, help="Batch size for processing prompt+image pairs")
 
     parsed_args = parser.parse_args()
 
