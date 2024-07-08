@@ -38,7 +38,7 @@ def appmetadata() -> AppMetadata:
     
     # (optional) and finally add runtime parameter specifications
     metadata.add_parameter(
-        name='defaultPrompt', type='string', default='What is shown in this video frame?',
+        name='defaultPrompt', type='string', default='Describe what is shown in this video frame.',
         description='default prompt to use for timeframes not specified in the promptMap. If set to `-`, '
                      'timeframes not specified in the promptMap will be skipped.'
     )
