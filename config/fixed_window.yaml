@@ -1,0 +1,13 @@
+default_prompt: |
+  [INST] <image>
+  Provide a detailed description of this video frame. Include information about the setting, people, objects, actions, colors, and any other significant visual elements. [/INST]
+
+context_config:
+  input_context: "fixed_window"  # Options: "timeframe", "timepoint", "fixed_window"
+  # if the choice is timeframe, ideally we would have a way to specify how to select frames from the timeframe
+
+  fixed_window:
+    window_duration: 1  # in seconds
+    stride: 5  # in seconds
+
+# generate a time point annotation, alignment annotaiton, and text document

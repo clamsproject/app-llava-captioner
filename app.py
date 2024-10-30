@@ -1,5 +1,7 @@
 import argparse
 import logging
+import yaml
+from pathlib import Path
 
 from clams import ClamsApp, Restifier
 from clams.appmetadata import AppMetadata
@@ -12,7 +14,6 @@ import torch
 class LlavaCaptioner(ClamsApp):
 
     def __init__(self):
-        super().__init__()
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -20,35 +21,63 @@ class LlavaCaptioner(ClamsApp):
         )
         self.model = LlavaNextForConditionalGeneration.from_pretrained(
             "llava-hf/llava-v1.6-mistral-7b-hf", 
-            quantization_config=quantization_config, 
-            device_map="auto"
+            quantization_config=quantization_config,
+            device_map="auto",
+            attn_implementation="flash_attention_2"
         )
         self.processor = LlavaNextProcessor.from_pretrained("llava-hf/llava-v1.6-mistral-7b-hf")
+        super().__init__()
 
     def _appmetadata(self) -> AppMetadata:
         pass
     
-    def get_prompt(self, label: str, prompt_map: dict, default_prompt: str) -> str:
-        prompt = prompt_map.get(label, default_prompt)
-        if prompt == "-":
-            return None
-        prompt = f"[INST] <image>\n{prompt}\n[/INST]"
-        return prompt
+    def load_config(self, config_file):
+        with open(config_file, 'r') as f:
+            return yaml.safe_load(f)
+
+    def get_prompt(self, label: str, config: dict) -> str:
+        if 'custom_prompts' in config and label in config['custom_prompts']:
+            return config['custom_prompts'][label]
+        return config['default_prompt']
 
     def _annotate(self, mmif: Mmif, **parameters) -> Mmif:
-        label_map = parameters.get('promptMap')
-        default_prompt = parameters.get('defaultPrompt')
-        frame_interval = parameters.get('frameInterval', 30)  # Default to every 30th frame if not specified
-        batch_size = parameters.get('batchSize', 8)  # Default batch size
-
+        self.logger.debug(f"Annotating with parameters: {parameters}")
+        config_file = parameters.get('config', 'config/shot_captioning.yaml')
+        # get containing directory of current file
+        config_dir = Path(__file__).parent
+        # get absolute path
+        config_file = config_dir / config_file
+        config = self.load_config(config_file)
+        
+        # batch_size = parameters.get('batchSize', 4)  # Default batch size
+        batch_size = 2
         video_doc: Document = mmif.get_documents_by_type(DocumentTypes.VideoDocument)[0]
-        input_view: View = mmif.get_views_for_document(video_doc.id)[-1]
+        # input_view: View = mmif.get_views_for_document(video_doc.id)[-1]
         new_view: View = mmif.new_view()
         self.sign_view(new_view, parameters)
         new_view.new_contain(DocumentTypes.TextDocument)
         new_view.new_contain(AnnotationTypes.Alignment)
 
-        timeframes = input_view.get_annotations(AnnotationTypes.TimeFrame)
+        input_context = config['context_config']['input_context']
+        
+        if input_context == 'timeframe':
+            app_uri = config['context_config']['timeframe']['app_uri']
+            # get all views with timeframe annotations and iterate over them to find the one with the correct app_id
+            all_views = mmif.get_all_views_contain(AnnotationTypes.TimeFrame)
+            for view in all_views:
+                if app_uri in view.metadata.app:
+                    timeframes = view.get_annotations(AnnotationTypes.TimeFrame)
+                    break
+            label_mapping = config['context_config']['timeframe'].get('label_mapping', {})
+        elif input_context == 'fixed_window':
+            window_duration = config['context_config']['fixed_window']['window_duration']
+            stride = config['context_config']['fixed_window']['stride']
+            fps = float(video_doc.get_property('fps'))
+            total_frames = int(video_doc.get_property('frameCount'))
+            frame_numbers = list(range(0, total_frames, int(fps * stride)))
+        else:
+            raise ValueError(f"Unsupported input context: {input_context}")
+
         prompts = []
         images = []
         annotations = []
@@ -59,31 +88,34 @@ class LlavaCaptioner(ClamsApp):
                 **inputs,
                 do_sample=False,
                 num_beams=5,
-                max_length=256,
+                max_length=200,
                 min_length=1,
                 repetition_penalty=1.5,
                 length_penalty=1.0,
                 temperature=1,
             )
             generated_texts = self.processor.batch_decode(outputs, skip_special_tokens=True)
+            
+            # NOTE: when creating a new caption text document from how should we align it to the given timeframe?
+            # it is running on one frame, so it makes sense to align it to a timepoint, but the timeframe is providing context
+            # for the caption and potentially determining the prompt.
+            # We could create 2 alignments, but that seems messy.
+            # We could create a single alignment from the text document to the timeframe and use the properties to specify which frame was used?
             for generated_text, annotation in zip(generated_texts, annotations):
+                print ("generated_text: ", generated_text)
                 text_document = new_view.new_textdocument(generated_text.strip())
                 alignment = new_view.new_annotation(AnnotationTypes.Alignment)
                 alignment.add_property("source", annotation['source'])
                 alignment.add_property("target", text_document.long_id)
 
-        if timeframes:
-            for timeframe in list(timeframes):
+        if input_context == 'timeframe':
+            for timeframe in timeframes:
                 label = timeframe.get_property('label')
-                prompt = self.get_prompt(label, label_map, default_prompt)
-                if not prompt:
-                    continue
+                mapped_label = label_mapping.get(label, 'default')
+                
+                prompt = self.get_prompt(mapped_label, config)
 
-                representatives = timeframe.get("representatives") if "representatives" in timeframe.properties else None
-                if representatives:
-                    image = vdh.extract_representative_frame(mmif, timeframe, as_PIL=True)
-                else:
-                    image = vdh.extract_mid_frame(mmif, timeframe, as_PIL=True)
+                image = vdh.extract_mid_frame(mmif, timeframe, as_PIL=True)
                 prompts.append(prompt)
                 images.append(image)
                 annotations.append({'source': timeframe.long_id})
@@ -91,17 +123,10 @@ class LlavaCaptioner(ClamsApp):
                 if len(prompts) == batch_size:
                     process_batch(prompts, images, annotations)
                     prompts, images, annotations = [], [], []
-
-            if prompts:
-                process_batch(prompts, images, annotations)
-        else:
-            total_frames = vdh.get_frame_count(video_doc)
-            frame_numbers = list(range(0, total_frames, frame_interval))
-            images = vdh.extract_frames_as_images(video_doc, frame_numbers)
-
+        else:  # fixed_window
+            images = vdh.extract_frames_as_images(video_doc, frame_numbers, as_PIL=True)
             for frame_number, image in zip(frame_numbers, images):
-                prompt = default_prompt
-
+                prompt = config['default_prompt']
                 prompts.append(prompt)
                 images.append(image)
                 # Create new timepoint annotation
@@ -113,18 +138,19 @@ class LlavaCaptioner(ClamsApp):
                     process_batch(prompts, images, annotations)
                     prompts, images, annotations = [], [], []
 
-            if prompts:
-                process_batch(prompts, images, annotations)
+        if prompts:
+            process_batch(prompts, images, annotations)
 
         return mmif
+    
+def get_app():
+    return LlavaCaptioner()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", action="store", default="5000", help="set port to listen")
     parser.add_argument("--production", action="store_true", help="run gunicorn server")
-    parser.add_argument("--frameInterval", type=int, default=10, help="Interval of frames for captioning when no timeframes are present")
-    parser.add_argument("--batchSize", type=int, default=4, help="Batch size for processing prompt+image pairs")
 
     parsed_args = parser.parse_args()
 

@@ -23,11 +23,11 @@ def appmetadata() -> AppMetadata:
     
     # first set up some basic information
     metadata = AppMetadata(
-        name="Llava Captioner",
-        description="Applies llava to video frames.",
+        name="Llama Captioner",
+        description="Applies LLaMA 3.2 to video frames.",
         app_license="Apache 2.0",
-        identifier="llava-captioner",
-        url="https://github.com/clamsproject/app-llava-captioner"
+        identifier="llama-captioner",
+        url="https://github.com/clamsproject/app-llama-captioner"
     )
 
     # and then add I/O specifications: an app must have at least one input and one output
@@ -38,7 +38,12 @@ def appmetadata() -> AppMetadata:
     
     # (optional) and finally add runtime parameter specifications
     metadata.add_parameter(
-        name='defaultPrompt', type='string', default='Describe what is shown in this video frame.',
+        name='frameInterval', type='integer', default=300,
+        description='The interval at which to extract frames from the video if there are no timeframe annotations. '
+        'Default is every 30 frames.'
+    )
+    metadata.add_parameter(
+        name='defaultPrompt', type='string', default='Describe what is shown in this video frame. Analyze the purpose of this frame in the context of a news video. Transcribe any text present.',
         description='default prompt to use for timeframes not specified in the promptMap. If set to `-`, '
                      'timeframes not specified in the promptMap will be skipped.'
     )
@@ -50,6 +55,11 @@ def appmetadata() -> AppMetadata:
                      'prompt. In order to skip timeframes with a particular label, pass `-` as the prompt value.'
                      'in order to skip all timeframes not specified in the promptMap, set the defaultPrompt'
                      'parameter to `-`'))
+    
+    metadata.add_parameter(
+        name='modelVersion', type='string', default='3.2',
+        description='Version of the LLaMA model to use.'
+    )
     
     return metadata
 

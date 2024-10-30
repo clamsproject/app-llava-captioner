@@ -1,0 +1,32 @@
+default_prompt: |
+  [INST] <image>
+  Please transcribe all visible text on this video frame. Be as accurate and complete as possible. [/INST]
+
+custom_prompts:
+  "slate": |
+    [INST] <image>
+    Please transcribe all key-value pairs visible on this slate. Format your response as a list of "key: value" pairs. [/INST]
+
+  "credits": |
+    [INST] <image>
+    Please transcribe all key-value pairs visible in these credits. Format your response as a list of "key: value" pairs. [/INST]
+
+  "chyron": |
+    [INST] <image>
+    Please transcribe the content of the chyron in this video frame. [/INST]
+
+context_config:
+  input_context: "timeframe"  # Options: "timeframe", "timepoint", "fixed_window"
+
+  timeframe: # what if we want to target multiple timeframes?
+    app_uri: "http://apps.clams.ai/swt-detection/"
+          
+       # TODO: should this have an option for "ignore" #
+      # ideally we would have a different sampling strategy for each label, for now we try "representative" and fall back to "mid frame"
+    label_mapping:
+      "slate": "slate"
+      "credits": "credits"
+      "chyron": "chyron"
+      # hypothetically what if we had bounding boxes and wanted to target bounding boxes in a certain timeframe
+
+# what should this generate? alignments to timeframes or representative timepoints?

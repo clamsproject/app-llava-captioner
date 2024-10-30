@@ -1,0 +1,13 @@
+default_prompt: |
+  [INST] <image>
+  Provide a detailed description of this video frame. Include information about the setting, people, objects, actions, colors, and any other significant visual elements. [/INST]
+
+context_config:
+  input_context: "timeframe"  # Options: "timeframe", "timepoint", "fixed_window"
+  # if the choice is timeframe, ideally we would have a way to specify how to select frames from the timeframe
+
+  timeframe:
+    app_uri: "http://apps.clams.ai/transnet-wrapper"
+
+# generate  alignment annotation, and text document aligned to the input timeframes
+# 
