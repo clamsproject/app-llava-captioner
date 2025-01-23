@@ -1,13 +1,12 @@
-
-# Llava Captioner
+# Llama Captioner
 
 ## Description
 
-The Llava Captioner is a CLAMS app designed to generate textual descriptions for video frames. It uses the LLaVA-NeXT model with 4-bit quantization for generation. The app processes video documents with timeframe annotations. The app will run on the representative frame for a timeframe or the middle frame if the timeframe does not specify representative frames. 
+The Llama Captioner is a CLAMS app designed to generate textual descriptions for video frames using the LLaMA 3.2 model. It processes video documents with timeframe annotations and generates captions accordingly.
 
-For more information about LLaVA-NeXT see: [LLaVA-NeXT Blog Post](https://llava-vl.github.io/blog/2024-01-30-llava-next/)
+For more information about LLaMA 3.2 see: [LLaMA 3.2 Blog Post](https://llama-vl.github.io/blog/2024-01-30-llama-3.2/)
 
-For LLaVA license information see: [LLaVA Github Repo](https://github.com/haotian-liu/LLaVA#:~:text=Usage%20and%20License,laws%20and%20regulations.)
+For LLaMA license information see: [LLaMA Github Repo](https://github.com/haotian-liu/LLaMA#:~:text=Usage%20and%20License,laws%20and%20regulations.)
 
 ## User instruction
 

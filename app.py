@@ -2,12 +2,15 @@ import argparse
 import logging
 import yaml
 from pathlib import Path
+import tqdm
+import time
+from PIL import Image
 
 from clams import ClamsApp, Restifier
 from clams.appmetadata import AppMetadata
 from mmif import Mmif, View, Document, AnnotationTypes, DocumentTypes
 from mmif.utils import video_document_helper as vdh
-from transformers import LlavaNextForConditionalGeneration, BitsAndBytesConfig, LlavaNextProcessor
+from transformers import LlavaNextForConditionalGeneration, BitsAndBytesConfig, AutoProcessor
 import torch
 
 
@@ -23,9 +26,11 @@ class LlavaCaptioner(ClamsApp):
             "llava-hf/llava-v1.6-mistral-7b-hf", 
             quantization_config=quantization_config,
             device_map="auto",
-            attn_implementation="flash_attention_2"
+            attn_implementation="flash_attention_2",
         )
-        self.processor = LlavaNextProcessor.from_pretrained("llava-hf/llava-v1.6-mistral-7b-hf")
+        self.processor = AutoProcessor.from_pretrained(
+            "llava-hf/llava-v1.6-mistral-7b-hf",
+        )
         super().__init__()
 
     def _appmetadata(self) -> AppMetadata:
@@ -42,34 +47,78 @@ class LlavaCaptioner(ClamsApp):
 
     def _annotate(self, mmif: Mmif, **parameters) -> Mmif:
         self.logger.debug(f"Annotating with parameters: {parameters}")
-        config_file = parameters.get('config', 'config/shot_captioning.yaml')
-        # get containing directory of current file
+        config_file = parameters.get('config')
+        print("config_file: ", config_file)
         config_dir = Path(__file__).parent
-        # get absolute path
         config_file = config_dir / config_file
         config = self.load_config(config_file)
         
-        # batch_size = parameters.get('batchSize', 4)  # Default batch size
-        batch_size = 2
-        video_doc: Document = mmif.get_documents_by_type(DocumentTypes.VideoDocument)[0]
-        # input_view: View = mmif.get_views_for_document(video_doc.id)[-1]
+        batch_size = 8
         new_view: View = mmif.new_view()
         self.sign_view(new_view, parameters)
         new_view.new_contain(DocumentTypes.TextDocument)
         new_view.new_contain(AnnotationTypes.Alignment)
 
+        def process_batch(prompts_batch, images_batch, annotations_batch):
+            try:
+
+                inputs = self.processor(images=images_batch, text=prompts_batch, padding=True, return_tensors="pt").to(self.model.device)
+                outputs = self.model.generate(
+                    **inputs,
+                    do_sample=False,
+                    num_beams=5,
+                    # max_length=200,
+                    max_new_tokens=200,
+                    min_length=1,
+                    repetition_penalty=1.5,
+                    length_penalty=1.0,
+                    temperature=1,
+                )
+                generated_texts = self.processor.batch_decode(outputs, skip_special_tokens=True)
+                
+                for generated_text, annotation in zip(generated_texts, annotations_batch):
+                    text_document = new_view.new_textdocument(generated_text.strip())
+                    alignment = new_view.new_annotation(AnnotationTypes.Alignment)
+                    alignment.add_property("source", annotation['source'])
+                    alignment.add_property("target", text_document.long_id)
+            finally:
+                del inputs
+                del outputs
+                del generated_texts
+                torch.cuda.empty_cache()
+
         input_context = config['context_config']['input_context']
         
-        if input_context == 'timeframe':
+        if input_context == "image":
+            print("input_context: image")
+            image_docs = mmif.get_documents_by_type(DocumentTypes.ImageDocument)
+            
+            # Process images in batches
+            for i in range(0, len(image_docs), batch_size):
+                batch_docs = image_docs[i:i + batch_size]
+                prompts = [config['default_prompt']] * len(batch_docs)
+                # Load images using PIL
+                images = [Image.open(doc.location_path()) for doc in batch_docs]
+                annotations_batch = [{'source': doc.long_id} for doc in batch_docs]
+                
+                start_time = time.time()
+                process_batch(prompts, images, annotations_batch)
+                print(f"Processed batch of {len(batch_docs)} in {time.time() - start_time:.2f} seconds")
+            
+        elif input_context == 'timeframe':
+            print("input_context: ", input_context)
             app_uri = config['context_config']['timeframe']['app_uri']
-            # get all views with timeframe annotations and iterate over them to find the one with the correct app_id
             all_views = mmif.get_all_views_contain(AnnotationTypes.TimeFrame)
             for view in all_views:
+                print(view.metadata.app)
                 if app_uri in view.metadata.app:
+                    print("found view with app_uri: ", app_uri)
                     timeframes = view.get_annotations(AnnotationTypes.TimeFrame)
                     break
             label_mapping = config['context_config']['timeframe'].get('label_mapping', {})
         elif input_context == 'fixed_window':
+            print("input_context: ", input_context)
+            video_doc = mmif.get_documents_by_type(DocumentTypes.VideoDocument)[0]  # Get first video document
             window_duration = config['context_config']['fixed_window']['window_duration']
             stride = config['context_config']['fixed_window']['stride']
             fps = float(video_doc.get_property('fps'))
@@ -78,70 +127,63 @@ class LlavaCaptioner(ClamsApp):
         else:
             raise ValueError(f"Unsupported input context: {input_context}")
 
-        prompts = []
-        images = []
-        annotations = []
-
-        def process_batch(prompts, images, annotations):
-            inputs = self.processor(images=images, text=prompts, padding=True, return_tensors="pt").to(self.model.device)
-            outputs = self.model.generate(
-                **inputs,
-                do_sample=False,
-                num_beams=5,
-                max_length=200,
-                min_length=1,
-                repetition_penalty=1.5,
-                length_penalty=1.0,
-                temperature=1,
-            )
-            generated_texts = self.processor.batch_decode(outputs, skip_special_tokens=True)
-            
-            # NOTE: when creating a new caption text document from how should we align it to the given timeframe?
-            # it is running on one frame, so it makes sense to align it to a timepoint, but the timeframe is providing context
-            # for the caption and potentially determining the prompt.
-            # We could create 2 alignments, but that seems messy.
-            # We could create a single alignment from the text document to the timeframe and use the properties to specify which frame was used?
-            for generated_text, annotation in zip(generated_texts, annotations):
-                print ("generated_text: ", generated_text)
-                text_document = new_view.new_textdocument(generated_text.strip())
-                alignment = new_view.new_annotation(AnnotationTypes.Alignment)
-                alignment.add_property("source", annotation['source'])
-                alignment.add_property("target", text_document.long_id)
-
         if input_context == 'timeframe':
-            for timeframe in timeframes:
-                label = timeframe.get_property('label')
-                mapped_label = label_mapping.get(label, 'default')
+            # Convert timeframes generator to list
+            timeframes = list(timeframes)
+            # Get all middle frame numbers first
+            frame_numbers = [vdh.get_mid_framenum(mmif, timeframe) for timeframe in timeframes]
+            # Batch extract all images
+            all_images = vdh.extract_frames_as_images(video_doc, frame_numbers, as_PIL=True)
+            
+            # Process in batches
+            for i in tqdm.tqdm(range(0, len(timeframes), batch_size)):
+                batch_timeframes = timeframes[i:i + batch_size]
+                batch_images = all_images[i:i + batch_size]
                 
-                prompt = self.get_prompt(mapped_label, config)
+                # Prepare batch data
+                prompts = []
+                annotations_batch = []
+                for timeframe in batch_timeframes:
+                    label = timeframe.get_property('label')
+                    mapped_label = label_mapping.get(label, 'default')
+                    prompt = self.get_prompt(mapped_label, config)
+                    prompts.append(prompt)
+                    annotations_batch.append({'source': timeframe.long_id})
+                
+                start_time = time.time()
+                process_batch(prompts, batch_images, annotations_batch)
+                print(f"Processed batch of {len(batch_timeframes)} in {time.time() - start_time:.2f} seconds")
 
-                image = vdh.extract_mid_frame(mmif, timeframe, as_PIL=True)
-                prompts.append(prompt)
-                images.append(image)
-                annotations.append({'source': timeframe.long_id})
-
-                if len(prompts) == batch_size:
-                    process_batch(prompts, images, annotations)
-                    prompts, images, annotations = [], [], []
-        else:  # fixed_window
-            images = vdh.extract_frames_as_images(video_doc, frame_numbers, as_PIL=True)
-            for frame_number, image in zip(frame_numbers, images):
+        elif input_context == 'fixed_window':  # fixed_window
+            prompts = []
+            images_batch = []
+            annotations_batch = []
+            for frame_number in tqdm.tqdm(frame_numbers):
+                image = vdh.extract_frame_as_image(video_doc, frame_number, as_PIL=True)
                 prompt = config['default_prompt']
                 prompts.append(prompt)
-                images.append(image)
-                # Create new timepoint annotation
+                images_batch.append(image)
                 timepoint = new_view.new_annotation(AnnotationTypes.TimePoint)
                 timepoint.add_property("timePoint", frame_number)
-                annotations.append({'source': timepoint.long_id})
+                annotations_batch.append({'source': timepoint.long_id})
 
                 if len(prompts) == batch_size:
-                    process_batch(prompts, images, annotations)
-                    prompts, images, annotations = [], [], []
+                    start_time = time.time()
+                    process_batch(prompts, images_batch, annotations_batch)
+                    end_time = time.time()
+                    elapsed_time = end_time - start_time
+                    print(f"Processed a batch of {batch_size} in {elapsed_time:.2f} seconds.")
+                    prompts, images_batch, annotations_batch = [], [], []
 
-        if prompts:
-            process_batch(prompts, images, annotations)
+            if prompts:
+                start_time = time.time()
+                process_batch(prompts, images_batch, annotations_batch)
+                end_time = time.time()
+                elapsed_time = end_time - start_time
+                print(f"Processed the final batch of {len(prompts)} in {elapsed_time:.2f} seconds.")
 
         return mmif
+
     
 def get_app():
     return LlavaCaptioner()
