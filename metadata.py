@@ -32,6 +32,7 @@ def appmetadata() -> AppMetadata:
 
     # and then add I/O specifications: an app must have at least one input and one output
     metadata.add_input(DocumentTypes.VideoDocument)
+    metadata.add_input(DocumentTypes.ImageDocument)
     metadata.add_input(AnnotationTypes.TimeFrame)
     metadata.add_output(AnnotationTypes.Alignment)
     metadata.add_output(DocumentTypes.TextDocument)
@@ -59,6 +60,10 @@ def appmetadata() -> AppMetadata:
     metadata.add_parameter(
         name='modelVersion', type='string', default='3.2',
         description='Version of the LLaMA model to use.'
+    )
+    # add parameter for config file name
+    metadata.add_parameter(  #todo check this path 
+        name='config', type='string', default="config/default.yaml", description='Name of the config file to use.'
     )
     
     return metadata
