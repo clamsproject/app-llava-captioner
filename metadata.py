@@ -23,11 +23,11 @@ def appmetadata() -> AppMetadata:
     
     # first set up some basic information
     metadata = AppMetadata(
-        name="Llama Captioner",
-        description="Applies LLaMA 3.2 to video frames.",
+        name="LLaVA Captioner",
+        description="Applies LLaVA v1.6 Mistral-7B to video frames for image captioning.",
         app_license="Apache 2.0",
-        identifier="llama-captioner",
-        url="https://github.com/clamsproject/app-llama-captioner"
+        identifier="llava-captioner",
+        url="https://github.com/clamsproject/app-llava-captioner"
     )
 
     # and then add I/O specifications: an app must have at least one input and one output
@@ -39,7 +39,7 @@ def appmetadata() -> AppMetadata:
     
     # (optional) and finally add runtime parameter specifications
     metadata.add_parameter(
-        name='frameInterval', type='integer', default=300,
+        name='frameInterval', type='integer', default=30,
         description='The interval at which to extract frames from the video if there are no timeframe annotations. '
         'Default is every 30 frames.'
     )
@@ -57,10 +57,7 @@ def appmetadata() -> AppMetadata:
                      'in order to skip all timeframes not specified in the promptMap, set the defaultPrompt'
                      'parameter to `-`'))
     
-    metadata.add_parameter(
-        name='modelVersion', type='string', default='3.2',
-        description='Version of the LLaMA model to use.'
-    )
+
     # add parameter for config file name
     metadata.add_parameter(  #todo check this path 
         name='config', type='string', default="config/default.yaml", description='Name of the config file to use.'

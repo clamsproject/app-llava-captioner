@@ -1,0 +1,35 @@
+default_prompt: |
+  [INST] <image>
+  I have an image containing information about a TV show or movie.
+
+  I need you to extract the following information from the image and generate it as JSON:
+
+  program-title
+  episode-title
+  series-title
+  title
+  episode-no
+  create-date
+  air-date
+  date
+  director
+  producer
+  camera
+
+  Important Notes:
+  - Not all of these keys will necessarily be present in the image.
+  - The image may contain other information not listed above.
+  - Only include the values for the keys listed above that are actually found in the image.
+  - If a key is not found, do not include it in the JSON output.
+
+  Example JSON Output:
+  {
+    "program-title": "The Simpsons",
+    "episode-title": "Homer Goes to College",
+    "episode-no": "5x02" 
+  }
+
+  Please provide the JSON output based on the information extracted from the image. [/INST]
+
+context_config:
+  input_context: "image"  # Options: "timeframe", "timepoint", "fixed_window", "image"
