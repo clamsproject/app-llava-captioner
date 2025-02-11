@@ -1,0 +1,6 @@
+default_prompt: |
+  [INST] <image>
+  Transcribe all visible text in the image. [/INST]
+
+context_config:
+  input_context: "image"  # Options: "timeframe", "timepoint", "fixed_window", "image"
