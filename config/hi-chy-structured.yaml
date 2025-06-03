@@ -1,0 +1,13 @@
+default_prompt: |
+  [INST] <image>
+  Analyze the text in this image and provide a JSON response with the following structure:
+  {
+    "name": "[person's name if present]",
+    "title": "[person's title or role if present]",
+    "location": "[location information if present]",
+    "other_text": "[any other significant text that doesn't fit the above categories]"
+  }
+  If any field is not present in the image, use null as its value. Ensure the response is valid JSON. [/INST]
+
+context_config:
+  input_context: "image"  # Options: "timeframe", "timepoint", "fixed_window", "image" 
