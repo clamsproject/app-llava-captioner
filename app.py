@@ -22,12 +22,24 @@ class LlavaCaptioner(ClamsApp):
             bnb_4bit_quant_type="nf4",
             bnb_4bit_compute_dtype=torch.float16,
         )
-        self.model = LlavaNextForConditionalGeneration.from_pretrained(
-            "llava-hf/llava-v1.6-mistral-7b-hf", 
-            quantization_config=quantization_config,
-            device_map="auto",
-            attn_implementation="flash_attention_2",
-        )
+        try:
+            self.model = LlavaNextForConditionalGeneration.from_pretrained(
+                "llava-hf/llava-v1.6-mistral-7b-hf", 
+                quantization_config=quantization_config,
+                device_map="auto",
+                # torch_dtype=torch.float16,
+                attn_implementation="flash_attention_2",
+            )
+        except Exception as e:
+            raise e
+            print(f"Failed to load model with flash attention: {e}")
+            print("Falling back to default attention implementation...")
+            self.model = LlavaNextForConditionalGeneration.from_pretrained(
+                "llava-hf/llava-v1.6-mistral-7b-hf", 
+                quantization_config=quantization_config,
+                device_map="auto",
+                attn_implementation="eager",  # Use standard attention implementation
+            )
         self.processor = AutoProcessor.from_pretrained(
             "llava-hf/llava-v1.6-mistral-7b-hf",
         )
@@ -53,7 +65,7 @@ class LlavaCaptioner(ClamsApp):
         config_file = config_dir / config_file
         config = self.load_config(config_file)
         
-        batch_size = 8
+        batch_size = 1
         new_view: View = mmif.new_view()
         self.sign_view(new_view, parameters)
         new_view.new_contain(DocumentTypes.TextDocument)
@@ -61,14 +73,12 @@ class LlavaCaptioner(ClamsApp):
 
         def process_batch(prompts_batch, images_batch, annotations_batch):
             try:
-
-                inputs = self.processor(images=images_batch, text=prompts_batch, padding=True, return_tensors="pt").to(self.model.device)
+                inputs = self.processor(images=images_batch[0], text=prompts_batch[0], padding=True, return_tensors="pt").to(self.model.device)
                 outputs = self.model.generate(
                     **inputs,
                     do_sample=False,
-                    num_beams=5,
-                    # max_length=200,
-                    max_new_tokens=200,
+                    num_beams=1,
+                    max_new_tokens=100,
                     min_length=1,
                     repetition_penalty=1.5,
                     length_penalty=1.0,
@@ -76,21 +86,39 @@ class LlavaCaptioner(ClamsApp):
                 )
                 generated_texts = self.processor.batch_decode(outputs, skip_special_tokens=True)
                 
-                for generated_text, annotation in zip(generated_texts, annotations_batch):
-                    text_document = new_view.new_textdocument(generated_text.strip())
+                for generated_text, prompt, annotation in zip(generated_texts, prompts_batch, annotations_batch):
+                    print("generated_text: ", generated_text, flush=True)
+                    print("prompt: ", prompt)
+                    print ("\n")
+                    # Remove everything between [INST] and [/INST] tags
+                    start_tag = "[INST]"
+                    end_tag = "[/INST]"
+                    start_idx = generated_text.find(start_tag)
+                    end_idx = generated_text.find(end_tag) + len(end_tag)
+                    if start_idx != -1 and end_idx != -1:
+                        clean_text = generated_text[end_idx:].strip()
+                    else:
+                        clean_text = generated_text.strip()
+                    print ("clean_text: ", clean_text)
+                    text_document = new_view.new_textdocument(clean_text)
                     alignment = new_view.new_annotation(AnnotationTypes.Alignment)
                     alignment.add_property("source", annotation['source'])
                     alignment.add_property("target", text_document.long_id)
+            except Exception as e:
+                print(f"Error processing batch: {e}")
+                raise e
             finally:
-                del inputs
-                del outputs
-                del generated_texts
+                try:
+                    del inputs
+                    del outputs
+                    del generated_texts
+                except:
+                    pass
                 torch.cuda.empty_cache()
-
+            
         input_context = config['context_config']['input_context']
         
         if input_context == "image":
-            print("input_context: image")
             image_docs = mmif.get_documents_by_type(DocumentTypes.ImageDocument)
             
             # Process images in batches
@@ -116,24 +144,61 @@ class LlavaCaptioner(ClamsApp):
                     timeframes = view.get_annotations(AnnotationTypes.TimeFrame)
                     break
             label_mapping = config['context_config']['timeframe'].get('label_mapping', {})
+            ignore_other_labels = config['context_config']['timeframe'].get('ignore_other_labels', False)
+
         elif input_context == 'fixed_window':
             print("input_context: ", input_context)
-            video_doc = mmif.get_documents_by_type(DocumentTypes.VideoDocument)[0]  # Get first video document
+            video_doc = mmif.get_documents_by_type(DocumentTypes.VideoDocument)[0]
             window_duration = config['context_config']['fixed_window']['window_duration']
             stride = config['context_config']['fixed_window']['stride']
-            fps = float(video_doc.get_property('fps'))
-            total_frames = int(video_doc.get_property('frameCount'))
+            try:
+                fps = float(video_doc.get_property('fps'))
+            except:
+                fps = 29.97 # TODO revisit this 
+
+            try:
+                total_frames = int(video_doc.get_property('frameCount'))
+            except:
+                total_frames = int(29.97*60*1)
+
             frame_numbers = list(range(0, total_frames, int(fps * stride)))
+        
         else:
             raise ValueError(f"Unsupported input context: {input_context}")
 
         if input_context == 'timeframe':
             # Convert timeframes generator to list
             timeframes = list(timeframes)
-            # Get all middle frame numbers first
-            frame_numbers = [vdh.get_mid_framenum(mmif, timeframe) for timeframe in timeframes]
-            # Batch extract all images
-            all_images = vdh.extract_frames_as_images(video_doc, frame_numbers, as_PIL=True)
+            
+            # Filter timeframes based on ignore_other_labels config
+            if ignore_other_labels:
+                timeframes = [tf for tf in timeframes if tf.get_property('label') in label_mapping]
+                if not timeframes:  # If no valid timeframes found
+                    self.logger.warning("No timeframes found with labels matching the label_mapping")
+                    return mmif
+            
+            # HACK REMOVE THIS LATER
+            # add a timeUnit property to the timeframes, the unit is milliseconds
+            for timeframe in timeframes:
+                timeframe.add_property('timeUnit', 'milliseconds')
+
+            # get representative frame
+            all_frame_numbers = [vdh.get_representative_framenum(mmif, timeframe) for timeframe in timeframes]
+            print(f"Extracted frame numbers: {all_frame_numbers}")
+            
+            video_doc = mmif.get_documents_by_type(DocumentTypes.VideoDocument)[0]
+            if not video_doc:
+                raise ValueError("No video document found in MMIF")
+            
+            try:
+                temp_frame_numbers = all_frame_numbers.copy()
+                all_images = vdh.extract_frames_as_images(video_doc, temp_frame_numbers, as_PIL=True)
+                print(f"Successfully extracted {len(all_images)} images")
+                if len(all_images) != len(all_frame_numbers):
+                    print(f"Warning: Number of extracted images ({len(all_images)}) doesn't match number of frame numbers ({len(all_frame_numbers)})")
+            except Exception as e:
+                print(f"Error extracting frames: {str(e)}")
+                raise
             
             # Process in batches
             for i in tqdm.tqdm(range(0, len(timeframes), batch_size)):
@@ -148,9 +213,14 @@ class LlavaCaptioner(ClamsApp):
                     mapped_label = label_mapping.get(label, 'default')
                     prompt = self.get_prompt(mapped_label, config)
                     prompts.append(prompt)
-                    annotations_batch.append({'source': timeframe.long_id})
+                    #HACK right now we're getting the rep frame id twice, once
+                    # in the video doc helper and once here, we should just get it once
+                    representative_id = timeframe.get_property('representatives')[0]
+                    annotations_batch.append({'source': representative_id})
                 
                 start_time = time.time()
+                print (len(prompts), len(batch_images), len(annotations_batch))
+                print (type(prompts[0]), type(batch_images[0]), type(annotations_batch[0]))
                 process_batch(prompts, batch_images, annotations_batch)
                 print(f"Processed batch of {len(batch_timeframes)} in {time.time() - start_time:.2f} seconds")
 
@@ -159,7 +229,13 @@ class LlavaCaptioner(ClamsApp):
             images_batch = []
             annotations_batch = []
             for frame_number in tqdm.tqdm(frame_numbers):
-                image = vdh.extract_frame_as_image(video_doc, frame_number, as_PIL=True)
+                print ("frame_number: ", frame_number)
+                try:
+                    image = vdh.extract_frames_as_images(video_doc, [frame_number], as_PIL=True)[0]
+                except:
+                    print ("frame_number: ", frame_number)
+                    continue    
+                
                 prompt = config['default_prompt']
                 prompts.append(prompt)
                 images_batch.append(image)

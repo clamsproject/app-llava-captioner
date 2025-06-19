@@ -1,0 +1,36 @@
+## This config file is for running llava over the hawaii chyron dataset using the instructions
+## which were provided to the the annotators as the prompt to llava. The config is designed to 
+## be run over mmif files containing swt annotations which were used to create the dataset.
+## The dataset is a filtered selection of the swt-labeled chyron frames and as a result the 
+## output from running this config will be a superset of the hichy dataset.
+
+# ##let an3Guidance = 
+# `Leave this area blank unless the frame type is "I", "N", or "Y".<br><br>
+
+# If the frame category is "I", "N", or "Y", then transcribe verbatim the text in the "lower third" or "chryon" area of the screen, including every character.  Preserve spacing and line breaks where feasible.<br><br>
+
+# Do not, under any circumstances, include text that is in the top half of the frame.<br><br>
+
+# Even for text in the bottom half of frame, do not include the text unless it is part of the chyron graphical element.  Easily legible text in a logo that is part of the chyron should be included, but watermarks, background text, and filmed text should be omitted.<br><br>
+
+# To transcribe an okina character, use the backtick: ${String.fromCharCode(96)} (ASCII code 39).`;
+
+
+custom_prompts:
+  "chyron": |
+    [INST] <image> transcribe verbatim the text in the "lower third" or "chyron" area of the screen, including every character.  Preserve spacing and line breaks where feasible.
+    Do not, under any circumstances, include text that is in the top half of the frame.
+    Even for text in the bottom half of frame, do not include the text unless it is part of the chyron graphical element.  Easily legible text in a logo that is part of the chyron should be included, but watermarks, background text, and filmed text should be omitted.
+    To transcribe an okina character, use the backtick: (ASCII code 39).[/INST]
+
+context_config:
+  input_context: "timeframe" 
+
+  timeframe:
+    app_uri: "http://apps.clams.ai/swt-detection/"
+          
+    label_mapping:
+      "chyron": "chyron"
+
+    ignore_other_labels: true
+
