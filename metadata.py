@@ -24,7 +24,7 @@ def appmetadata() -> AppMetadata:
     # first set up some basic information
     metadata = AppMetadata(
         name="LLaVA Captioner",
-        description="Applies LLaVA v1.6 Mistral-7B to video frames for image captioning.",
+        description="Applies LLaVA v1.6 Mistral-7B to video frames for image captioning and text transcription.",
         app_license="Apache 2.0",
         identifier="llava-captioner",
         url="https://github.com/clamsproject/app-llava-captioner"
@@ -39,28 +39,29 @@ def appmetadata() -> AppMetadata:
     
     # (optional) and finally add runtime parameter specifications
     metadata.add_parameter(
-        name='frameInterval', type='integer', default=30,
+        name='frameInterval', type='integer',
         description='The interval at which to extract frames from the video if there are no timeframe annotations. '
         'Default is every 30 frames.'
     )
     metadata.add_parameter(
-        name='defaultPrompt', type='string', default='Describe what is shown in this video frame. Analyze the purpose of this frame in the context of a news video. Transcribe any text present.',
+        name='defaultPrompt', type='string',
         description='default prompt to use for timeframes not specified in the promptMap. If set to `-`, '
                      'timeframes not specified in the promptMap will be skipped.'
     )
     metadata.add_parameter(
         name='promptMap', type='map', default=[],
-        description=('mapping of labels of the input timeframe annotations to new prompts. Must be formatted as '
-                     '\"IN_LABEL:PROMPT\" (with a colon). To pass multiple mappings, use this parameter multiple '
-                     'times. By default, any timeframe labels not mapped to a prompt will be used with the default'
-                     'prompt. In order to skip timeframes with a particular label, pass `-` as the prompt value.'
-                     'in order to skip all timeframes not specified in the promptMap, set the defaultPrompt'
+        description=('Mapping of labels of the input timeframe annotations to new prompts. Must be formatted as '
+                     '"IN_LABEL:PROMPT" (with a colon). To pass multiple mappings, use this parameter multiple '
+                     'times. By default, any timeframe labels not mapped to a prompt will be used with the default '
+                     'prompt. In order to skip timeframes with a particular label, pass `-` as the prompt value. '
+                     'In order to skip all timeframes not specified in the promptMap, set the defaultPrompt '
                      'parameter to `-`'))
     
-
     # add parameter for config file name
-    metadata.add_parameter(  #todo check this path 
-        name='config', type='string', default="config/default.yaml", description='Name of the config file to use.'
+    metadata.add_parameter(
+        name='config', type='string', default="config/fixed_window.yaml", 
+        description='Name of the configuration file to use. Configuration files can specify custom prompts, '
+                    'input context settings, and other processing parameters.'
     )
     
     return metadata
