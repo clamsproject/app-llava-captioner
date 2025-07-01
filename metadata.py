@@ -39,12 +39,12 @@ def appmetadata() -> AppMetadata:
     
     # (optional) and finally add runtime parameter specifications
     metadata.add_parameter(
-        name='frameInterval', type='integer',
+        name='frameInterval', type='integer', default=30,
         description='The interval at which to extract frames from the video if there are no timeframe annotations. '
         'Default is every 30 frames.'
     )
     metadata.add_parameter(
-        name='defaultPrompt', type='string',
+        name='defaultPrompt', type='string', default="",
         description='default prompt to use for timeframes not specified in the promptMap. If set to `-`, '
                      'timeframes not specified in the promptMap will be skipped.'
     )
