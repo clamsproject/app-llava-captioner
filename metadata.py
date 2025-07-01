@@ -64,6 +64,13 @@ def appmetadata() -> AppMetadata:
                     'input context settings, and other processing parameters.'
     )
     
+    # add parameter for batch size
+    metadata.add_parameter(
+        name='batch_size', type='integer', default=1,
+        description='Number of images to process in a single batch. Default is 1. '
+                    'Higher values may improve throughput but require more memory.'
+    )
+    
     return metadata
 
 

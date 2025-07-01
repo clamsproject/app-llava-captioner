@@ -32,7 +32,6 @@ class LlavaCaptioner(ClamsApp):
     DEFAULT_FPS = 29.97
     DEFAULT_VIDEO_DURATION_MINUTES = 1
     
-    DEFAULT_BATCH_SIZE = 1
     DEFAULT_MAX_NEW_TOKENS = 100
     DEFAULT_TEMPERATURE = 1.0
     DEFAULT_REPETITION_PENALTY = 1.5
@@ -293,9 +292,10 @@ class LlavaCaptioner(ClamsApp):
             parameters: Runtime parameters
         """
         image_docs = mmif.get_documents_by_type(DocumentTypes.ImageDocument)
+        batch_size = parameters.get('batch_size')
         
-        for i in range(0, len(image_docs), self.DEFAULT_BATCH_SIZE):
-            batch_docs = image_docs[i:i + self.DEFAULT_BATCH_SIZE]
+        for i in range(0, len(image_docs), batch_size):
+            batch_docs = image_docs[i:i + batch_size]
             prompts = [self.get_prompt('default', parameters)] * len(batch_docs)
             images = [Image.open(doc.location_path()) for doc in batch_docs]
             annotations_batch = [{'source': doc.long_id} for doc in batch_docs]
@@ -365,9 +365,10 @@ class LlavaCaptioner(ClamsApp):
             raise
         
         # Process in batches
-        for i in tqdm.tqdm(range(0, len(timeframes), self.DEFAULT_BATCH_SIZE)):
-            batch_timeframes = timeframes[i:i + self.DEFAULT_BATCH_SIZE]
-            batch_images = all_images[i:i + self.DEFAULT_BATCH_SIZE]
+        batch_size = parameters.get('batch_size')
+        for i in tqdm.tqdm(range(0, len(timeframes), batch_size)):
+            batch_timeframes = timeframes[i:i + batch_size]
+            batch_images = all_images[i:i + batch_size]
             
             # Prepare batch data
             prompts = []
@@ -407,6 +408,7 @@ class LlavaCaptioner(ClamsApp):
         prompts = []
         images_batch = []
         annotations_batch = []
+        batch_size = parameters.get('batch_size')
         
         for frame_number in tqdm.tqdm(frame_numbers):
             try:
@@ -423,10 +425,10 @@ class LlavaCaptioner(ClamsApp):
             timepoint.add_property("timePoint", frame_number)
             annotations_batch.append({'source': timepoint.long_id})
 
-            if len(prompts) == self.DEFAULT_BATCH_SIZE:
+            if len(prompts) == batch_size:
                 start_time = time.time()
                 self._process_batch(prompts, images_batch, annotations_batch, new_view)
-                self.logger.info(f"Processed batch of {self.DEFAULT_BATCH_SIZE} frames in {time.time() - start_time:.2f} seconds")
+                self.logger.info(f"Processed batch of {batch_size} frames in {time.time() - start_time:.2f} seconds")
                 prompts, images_batch, annotations_batch = [], [], []
 
         # Process remaining frames
