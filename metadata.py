@@ -71,6 +71,13 @@ def appmetadata() -> AppMetadata:
                     'Higher values may improve throughput but require more memory.'
     )
     
+    # add parameter for num_beams
+    metadata.add_parameter(
+        name='num_beams', type='integer', default=1,
+        description='Number of beams for beam search during text generation. Default is 1. '
+                    'Higher values may improve quality but increase generation time.'
+    )
+    
     return metadata
 
 

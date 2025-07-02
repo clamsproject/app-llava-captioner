@@ -158,7 +158,7 @@ class LlavaCaptioner(ClamsApp):
 
         return fps, total_frames
 
-    def _process_batch(self, prompts_batch: list, images_batch: list, annotations_batch: list, new_view: View) -> None:
+    def _process_batch(self, prompts_batch: list, images_batch: list, annotations_batch: list, new_view: View, parameters: dict) -> None:
         """
         Process a batch of prompts and images through the LLaVA model.
         
@@ -167,6 +167,7 @@ class LlavaCaptioner(ClamsApp):
             images_batch: List of PIL images for the batch
             annotations_batch: List of annotation metadata for the batch
             new_view: MMIF view to add new annotations to
+            parameters: Runtime parameters for the annotation process
         """
         try:
             inputs = self.processor(
@@ -176,10 +177,14 @@ class LlavaCaptioner(ClamsApp):
                 return_tensors="pt"
             ).to(self.model.device)
             
+            # Get num_beams parameter and set do_sample accordingly
+            num_beams = parameters.get('num_beams', 1)
+            do_sample = num_beams == 1
+            
             outputs = self.model.generate(
                 **inputs,
-                do_sample=False,
-                num_beams=1,
+                do_sample=do_sample,
+                num_beams=num_beams,
                 max_new_tokens=self.DEFAULT_MAX_NEW_TOKENS,
                 min_length=1,
                 repetition_penalty=self.DEFAULT_REPETITION_PENALTY,
@@ -301,7 +306,7 @@ class LlavaCaptioner(ClamsApp):
             annotations_batch = [{'source': doc.long_id} for doc in batch_docs]
             
             start_time = time.time()
-            self._process_batch(prompts, images, annotations_batch, new_view)
+            self._process_batch(prompts, images, annotations_batch, new_view, parameters)
             self.logger.info(f"Processed batch of {len(batch_docs)} images in {time.time() - start_time:.2f} seconds")
 
     def _process_timeframe_annotations(self, mmif: Mmif, new_view: View, parameters: dict, config: dict) -> None:
@@ -383,7 +388,7 @@ class LlavaCaptioner(ClamsApp):
                 annotations_batch.append({'source': representative_id})
             
             start_time = time.time()
-            self._process_batch(prompts, batch_images, annotations_batch, new_view)
+            self._process_batch(prompts, batch_images, annotations_batch, new_view, parameters)
             self.logger.info(f"Processed batch of {len(batch_timeframes)} timeframes in {time.time() - start_time:.2f} seconds")
 
     def _process_fixed_window(self, mmif: Mmif, new_view: View, parameters: dict, config: dict) -> None:
@@ -427,14 +432,14 @@ class LlavaCaptioner(ClamsApp):
 
             if len(prompts) == batch_size:
                 start_time = time.time()
-                self._process_batch(prompts, images_batch, annotations_batch, new_view)
+                self._process_batch(prompts, images_batch, annotations_batch, new_view, parameters)
                 self.logger.info(f"Processed batch of {batch_size} frames in {time.time() - start_time:.2f} seconds")
                 prompts, images_batch, annotations_batch = [], [], []
 
         # Process remaining frames
         if prompts:
             start_time = time.time()
-            self._process_batch(prompts, images_batch, annotations_batch, new_view)
+            self._process_batch(prompts, images_batch, annotations_batch, new_view, parameters)
             self.logger.info(f"Processed final batch of {len(prompts)} frames in {time.time() - start_time:.2f} seconds")
 
     
