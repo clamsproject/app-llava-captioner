@@ -29,18 +29,65 @@ The app supports the following parameters:
 
 ### Configuration Files
 
-The app supports YAML configuration files to specify detailed behavior. Several example configurations are provided:
-
+The app supports YAML configuration files to specify detailed behavior. Several example configurations are provided in the `config/` directory:
 
 Each configuration file can specify:
 - `default_prompt`: The prompt template to use with LLaVA
 - `custom_prompts`: Label-specific prompts for different types of content
 - `context_config`: Specifies how to process the input (timeframe, timepoint, fixed_window, or image)
 
-For specific use cases, see the example configuration files in the `config/` directory:
+#### Example Configuration Files
+
 - `fixed_window.yaml`: Regular interval processing
 - `shot_captioning.yaml`: Shot-based video captioning
 - `slate_dates_images.yaml`: Date extraction from slates
 - `slates_all_fields.yaml`: Detailed metadata extraction from slates
 - `swt_transcription.yaml`: Text transcription with custom prompts for different frame types
+
+### Usage Examples
+
+#### Basic Usage with CLI
+
+```bash
+# Process a video with default settings
+python cli.py input.mmif output.mmif
+
+# Use a specific configuration file
+python cli.py --config config/swt_transcription.yaml input.mmif output.mmif
+
+# Use custom prompts
+python cli.py --defaultPrompt "Describe this frame in detail" --promptMap "slate:Extract all text from this slate" input.mmif output.mmif
+```
+
+#### Using with Docker
+
+```bash
+# Build the container
+docker build -t llava-captioner .
+
+# Run the container
+docker run -v /path/to/data:/data llava-captioner python cli.py /data/input.mmif /data/output.mmif
+```
+
+#### Web Service
+
+```bash
+# Start the web service
+python app.py --port 5000
+
+# In production mode
+python app.py --production
+```
+
+### Input/Output Specifications
+
+#### Input
+- **VideoDocument**: Video files to extract frames from
+- **ImageDocument**: Individual images to caption
+- **TimeFrame**: Annotations specifying time segments to process
+
+#### Output
+- **TextDocument**: Generated captions for each processed frame
+- **Alignment**: Links between TimePoint annotations and generated text documents
+
 
