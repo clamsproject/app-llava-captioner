@@ -359,7 +359,8 @@ class LlavaCaptioner(ClamsApp):
         
         # Extract frames as images
         try:
-            all_images = vdh.extract_frames_as_images(video_doc, all_frame_numbers, as_PIL=True)
+            temp_all_frame_numbers = all_frame_numbers.copy()
+            all_images = vdh.extract_frames_as_images(video_doc, temp_all_frame_numbers, as_PIL=True)
             self.logger.info(f"Successfully extracted {len(all_images)} images")
             
             if len(all_images) != len(all_frame_numbers):
