@@ -1,0 +1,28 @@
+## This config file is for running a VLM over the hawaii chyron dataset using a prompt
+## derived from the original annotator instructions. The config is designed to
+## be run over mmif files containing swt annotations which were used to create the dataset.
+## The dataset is a filtered selection of the swt-labeled chyron frames and as a result the
+## output from running this config will be a superset of the hichy dataset.
+
+custom_prompts:
+  "chyron": |
+    [INST] <image> You are an expert assistant for video analysis. Your task is to transcribe the text from the chyron (the graphical overlay in the lower-third of the screen).
+
+    Follow these rules precisely:
+    1.  **Focus Area:** Only transcribe text from the chyron graphic at the bottom of the image. Completely ignore any text in the top half of the frame.
+    2.  **Content:** Transcribe the text verbatim, including all characters, symbols, and numbers. Preserve the original line breaks and spacing. Text within a logo should be transcribed only if the logo is an integral part of the chyron graphic itself.
+    3.  **Exclusions:** Do not transcribe watermarks, standalone channel logos, or any text that is part of the background video scene (e.g., text on signs, buildings, or clothing).
+    4.  **Special Character:** For the Hawaiian ʻokina character, use the backtick character (`).
+
+    Provide only the transcribed text. [/INST]
+
+context_config:
+  input_context: "timeframe"
+
+  timeframe:
+    app_uri: "http://apps.clams.ai/swt-detection/"
+
+    label_mapping:
+      "chyron": "chyron"
+
+    ignore_other_labels: true
