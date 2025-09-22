@@ -1,0 +1,18 @@
+## Config for LLaVA to provide raw text transcription of slate content
+## Outputs complete text content as it appears on the slate
+
+default_prompt: |
+  Please transcribe all the text visible in this broadcast slate image exactly as it appears. 
+  
+  Instructions:
+  - Include all text, numbers, and readable content
+  - Preserve the original formatting and line breaks when possible
+  - Maintain original capitalization as shown
+  - Include special characters, punctuation, and symbols
+  - If text is unclear or partially obscured, indicate with [unclear] 
+  - Do not add interpretations or corrections
+  - Present the transcription as plain text
+  [/INST]
+
+context_config:
+  input_context: "image"

@@ -1,0 +1,30 @@
+## Config for LLaVA to extract structured metadata directly from slate images
+## Outputs JSON with standardized field names for broadcast slate metadata
+
+default_prompt: |
+  Analyze this broadcast slate image and extract metadata into the following JSON structure. Only include fields that are clearly visible in the image:
+  {
+    "program-title": "[main program name if present]",
+    "series-title": "[series name if present]", 
+    "episode-title": "[episode title if present]",
+    "episode-no": "[episode number if present]",
+    "air-date": "[air date in YYYY-MM-DD format if present]",
+    "create-date": "[creation/tape/record date in YYYY-MM-DD format if present]",
+    "date": "[any other date in YYYY-MM-DD format if present]",
+    "director": "[director name if present]",
+    "producer": "[producer name if present]",
+    "camera": "[camera operator/CMX if present]",
+    "length": "[program length if present]",
+    "tape-no": "[tape number if present]"
+  }
+  
+  Guidelines:
+  - Use null for any field not present in the image
+  - Normalize dates to YYYY-MM-DD format (e.g., "10/15/86" becomes "1986-10-15")
+  - For names, preserve capitalization as shown but normalize formatting
+  - Extract exact text content for program/series/episode titles
+  - Ensure response is valid JSON
+  [/INST]
+
+context_config:
+  input_context: "image"

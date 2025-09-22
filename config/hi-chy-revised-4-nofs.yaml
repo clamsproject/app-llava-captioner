@@ -1,0 +1,36 @@
+## This config file is for running a VLM over a chyron dataset.
+## The config is designed to be run over mmif files containing swt annotations which were used to create the dataset.
+## The dataset is a filtered selection of the swt-labeled chyron frames and as a result the
+## output from running this config will be a superset of the original dataset.
+
+custom_prompts:
+  "chyron": |
+    You are a data extraction tool specializing in optical character recognition (OCR) from images. Your sole function is to analyze the provided image, identify the chyron (the lower-third graphic with a person's name and details), transcribe its text, and structure it according to the following rules. **Focus only on the text within the chyron graphic itself and ignore all other text visible in the image (such as news tickers or channel logos).**
+
+    Do not add any commentary, explanation, or introductory text.
+
+    **Input:** You will be given an image containing a chyron.
+
+    **Output Rules:**
+
+    1. **First Line:** Transcribe the person's full name exactly as it appears in the image, including all titles and designations.
+
+    2. **Second Line:** Provide the normalized form of the name in "Lastname, Firstname" or "Lastname, Firstname Middlename, Suffix" format.
+
+    3. **Subsequent Lines:** List each additional attribute (like a role, title, or location) you find in the image on its own separate line.
+
+    4. **Formatting:** Place a single blank line between each piece of data.
+
+    Now, analyze the following image and provide the structured text output:
+    <image>
+
+context_config:
+  input_context: "timeframe"
+
+  timeframe:
+    app_uri: "http://apps.clams.ai/swt-detection/"
+
+    label_mapping:
+      "chyron": "chyron"
+
+    ignore_other_labels: true

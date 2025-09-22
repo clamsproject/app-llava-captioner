@@ -116,14 +116,25 @@ class LlavaCaptioner(ClamsApp):
 
     def _clean_generated_text(self, generated_text: str) -> str:
         """
-        Clean generated text by removing instruction tags.
+        Clean generated text by removing chat template artifacts.
         
         Args:
             generated_text: Raw generated text from the model
             
         Returns:
-            Cleaned text without instruction tags
+            Cleaned text without template artifacts
         """
+        # For chat template, the processor.decode should give us clean output,
+        # but we may need to remove any remaining template artifacts
+        
+        # Remove common chat template artifacts
+        if "<|im_start|>" in generated_text:
+            # Remove any remaining chat template markers
+            generated_text = generated_text.split("<|im_start|>")[-1]
+            if "<|im_end|>" in generated_text:
+                generated_text = generated_text.split("<|im_end|>")[0]
+        
+        # Legacy support for [INST]/[/INST] format
         start_tag = "[INST]"
         end_tag = "[/INST]"
         start_idx = generated_text.find(start_tag)
@@ -131,8 +142,8 @@ class LlavaCaptioner(ClamsApp):
         
         if start_idx != -1 and end_idx != -1:
             return generated_text[end_idx:].strip()
-        else:
-            return generated_text.strip()
+        
+        return generated_text.strip()
 
     def _get_video_properties(self, video_doc: Document) -> tuple[float, int]:
         """
@@ -160,7 +171,7 @@ class LlavaCaptioner(ClamsApp):
 
     def _process_batch(self, prompts_batch: list, images_batch: list, annotations_batch: list, new_view: View, parameters: dict) -> None:
         """
-        Process a batch of prompts and images through the LLaVA model.
+        Process a batch of prompts and images through the LLaVA model using chat templates.
         
         Args:
             prompts_batch: List of prompts for the batch
@@ -170,31 +181,45 @@ class LlavaCaptioner(ClamsApp):
             parameters: Runtime parameters for the annotation process
         """
         try:
-            inputs = self.processor(
-                images=images_batch[0], 
-                text=prompts_batch[0], 
-                padding=True, 
-                return_tensors="pt"
-            ).to(self.model.device)
-            
-            # Get num_beams parameter and set do_sample accordingly
-            num_beams = parameters.get('num_beams', 1)
-            do_sample = num_beams == 1
-            
-            outputs = self.model.generate(
-                **inputs,
-                do_sample=do_sample,
-                num_beams=num_beams,
-                max_new_tokens=self.DEFAULT_MAX_NEW_TOKENS,
-                min_length=1,
-                repetition_penalty=self.DEFAULT_REPETITION_PENALTY,
-                length_penalty=self.DEFAULT_LENGTH_PENALTY,
-                temperature=self.DEFAULT_TEMPERATURE,
-            )
-            
-            generated_texts = self.processor.batch_decode(outputs, skip_special_tokens=True)
-            
-            for generated_text, prompt, annotation in zip(generated_texts, prompts_batch, annotations_batch):
+            # LLaVA with chat template - process one at a time for now
+            for prompt, image, annotation in zip(prompts_batch, images_batch, annotations_batch):
+                # Create chat message structure
+                messages = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image", "image": image},
+                        ]
+                    }
+                ]
+                
+                # Apply chat template
+                inputs = self.processor.apply_chat_template(
+                    messages,
+                    add_generation_prompt=True,
+                    tokenize=True,
+                    return_dict=True,
+                    return_tensors="pt"
+                ).to(self.model.device)
+                
+                # Get num_beams parameter and set do_sample accordingly
+                num_beams = parameters.get('num_beams', 1)
+                do_sample = num_beams == 1
+                
+                outputs = self.model.generate(
+                    **inputs,
+                    do_sample=do_sample,
+                    num_beams=num_beams,
+                    max_new_tokens=self.DEFAULT_MAX_NEW_TOKENS,
+                    min_length=1,
+                    repetition_penalty=self.DEFAULT_REPETITION_PENALTY,
+                    length_penalty=self.DEFAULT_LENGTH_PENALTY,
+                    temperature=self.DEFAULT_TEMPERATURE,
+                )
+                
+                generated_text = self.processor.decode(outputs[0], skip_special_tokens=True)
+                
                 self.logger.debug(f"Generated text: {generated_text}")
                 self.logger.debug(f"Prompt: {prompt}")
                 
@@ -206,18 +231,17 @@ class LlavaCaptioner(ClamsApp):
                 alignment.add_property("source", annotation['source'])
                 alignment.add_property("target", text_document.long_id)
                 
+                # Clean up GPU memory after each iteration
+                try:
+                    del inputs
+                    del outputs
+                except NameError:
+                    pass
+                torch.cuda.empty_cache()
+                
         except Exception as e:
             self.logger.error(f"Error processing batch: {e}")
             raise
-        finally:
-            # Clean up GPU memory
-            try:
-                del inputs
-                del outputs
-                del generated_texts
-            except NameError:
-                pass
-            torch.cuda.empty_cache()
 
     def _annotate(self, mmif: Mmif, **parameters) -> Mmif:
         """

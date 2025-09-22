@@ -1,0 +1,49 @@
+## Config for LLaVA focused on extracting key metadata fields from slates
+## Emphasis on identifying and structuring the most important broadcast metadata
+
+default_prompt: |
+  Examine this broadcast slate and identify key metadata fields. Focus on extracting these specific elements if visible:
+
+  1. PROGRAM INFORMATION:
+     - Program/show name (main title)
+     - Series name (if different from program name)
+     - Episode title (if present)
+     - Episode number or program number
+
+  2. PRODUCTION INFORMATION:
+     - Director name
+     - Producer name
+     - Air date(s) 
+     - Tape/record date
+     - Length/duration
+
+  3. TECHNICAL INFORMATION:
+     - Tape number
+     - Camera operator
+     - Any technical notes
+
+  Format your response as key-value pairs, one per line:
+  field-name: value
+
+  Use these standardized field names:
+  - series-title
+  - program-title  
+  - episode-title
+  - episode-no
+  - air-date
+  - create-date
+  - director
+  - producer
+  - camera
+  - length
+  - tape-no
+
+  Guidelines:
+  - Only include fields that are clearly visible
+  - Normalize dates to YYYY-MM-DD format
+  - Use exact text as it appears for titles and names
+  - One field per line with format "field-name: value"
+  [/INST]
+
+context_config:
+  input_context: "image"
