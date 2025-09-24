@@ -1,14 +1,18 @@
 # Make sure clams-python version is explicitly specified, at least the lower bound
 clams-python==1.2.6
+mmif-python[cv]==1.0.18
 
 # PyTorch and related dependencies
 torch==2.7.1
 transformers==4.48.0
 accelerate==0.30.1
 bitsandbytes==0.46.0
+# Use pre-compiled flash-attn wheel instead of source compilation
+# Note: This will try to find a pre-compiled wheel, if not available it will fall back to source
+flash-attn==2.8.0.post2
+
 # Image processing
 Pillow==10.3.0
-opencv-python==4.9.0.80
 
 # YAML configuration support
 PyYAML==6.0.1
