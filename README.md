@@ -69,6 +69,10 @@ docker build -t llava-captioner .
 docker run -v /path/to/data:/data llava-captioner python cli.py /data/input.mmif /data/output.mmif
 ```
 
+#### Using custom configs with containers
+
+When running the containerized version, you can override the built-in configuration directory by mounting an external directory to `/app/config` in the container. This allows you to use completely custom configuration files without rebuilding the container image. For example: `docker run -v /path/to/custom/configs:/app/config llava-captioner python cli.py --config custom.yaml input.mmif output.mmif`
+
 #### Web Service
 
 ```bash
