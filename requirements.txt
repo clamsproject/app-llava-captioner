@@ -6,7 +6,9 @@ mmif-python[cv]
 torch==2.7.1
 transformers==4.48.0
 accelerate==0.30.1
-bitsandbytes==0.46.0
+bitsandbytes==0.45.2
+flash-attn==2.8.0.post2
+
 # flash-attn==2.8.0.post2  # Disabled due to container compatibility issues
 tokenizers==0.21.1
 

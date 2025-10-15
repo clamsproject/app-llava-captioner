@@ -52,14 +52,23 @@ class LlavaCaptioner(ClamsApp):
                 attn_implementation="flash_attention_2",
             )
         except Exception as e:
-            self.logger.warning(f"Failed to load model with flash attention: {e}")
-            self.logger.info("Falling back to default attention implementation...")
-            self.model = LlavaNextForConditionalGeneration.from_pretrained(
-                "llava-hf/llava-v1.6-mistral-7b-hf", 
-                quantization_config=quantization_config,
-                device_map="auto",
-                attn_implementation="eager",
-            )
+            print(f"Failed to load model with flash attention: {e}")
+            print("Falling back to default attention implementation...")
+            try:
+                self.model = LlavaNextForConditionalGeneration.from_pretrained(
+                    "llava-hf/llava-v1.6-mistral-7b-hf", 
+                    quantization_config=quantization_config,
+                    device_map="auto",
+                    attn_implementation="eager",
+                )
+            except Exception as e2:
+                print(f"Failed to load model with quantization: {e2}")
+                print("Falling back to model without quantization...")
+                self.model = LlavaNextForConditionalGeneration.from_pretrained(
+                    "llava-hf/llava-v1.6-mistral-7b-hf", 
+                    device_map="auto",
+                    torch_dtype=torch.float16,
+                )
         
         self.processor = AutoProcessor.from_pretrained("llava-hf/llava-v1.6-mistral-7b-hf")
         super().__init__()
