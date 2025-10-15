@@ -1,5 +1,5 @@
 # Use latest clams-python version
-clams-python==1.3.2
+clams-python==1.3.3
 mmif-python[cv]
 
 # PyTorch and related dependencies - disable flash-attn for compatibility
